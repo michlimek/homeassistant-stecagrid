@@ -123,70 +123,15 @@ class StecagridSensor(CoordinatorEntity, SensorEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        data_available = False
-
-        try:
-            # Handle AC power
-            if "output" in self.entity_description.key:
-                self._attr_native_value = self.coordinator.data["ac_power"]
-                data_available = True
-            # Handle AC power
-            if "ac_power" in self.entity_description.key:
-                self._attr_native_value = self.coordinator.data["ac_power"]
-                data_available = True
-
-            # Handle panel power
-            if "panel_power" in self.entity_description.key:
-                self._attr_native_value = self.coordinator.data["panel_power"]
-                data_available = True
-
-            # Handle panel voltage
-            if "panel_voltage" in self.entity_description.key:
-                self._attr_native_value = self.coordinator.data["panel_voltage"]
-                data_available = True
-
-            # Handle panel current
-            if "panel_current" in self.entity_description.key:
-                self._attr_native_value = self.coordinator.data["panel_current"]
-                data_available = True
-
-            # Handle daily yield
-            if "daily_yield" in self.entity_description.key:
-                self._attr_native_value = self.coordinator.data["daily_yield"]
-                data_available = True
-
-            # Handle lifetime energy; missing data must not be interpreted as zero.
-            if self.entity_description.key == "total_yield":
-                value = self.coordinator.data.get("total_yield")
-                self._attr_native_value = value
-                self._attr_available = value is not None
-                self.async_write_ha_state()
-                return
-
-            # Handle time
-            if "time" in self.entity_description.key:
-                self._attr_native_value = self.coordinator.data["time"]
-                data_available = True
-
-            self._attr_available = data_available
-
-            # Only call async_write_ha_state if the state has changed
-            if data_available:
-                self.async_write_ha_state()
-
-        except KeyError as ex:
-            _LOGGER.debug(
-                f"KeyError: {str(ex)} while handling {self.entity_description.key}"
-            )
-        except ValueError as ex:
-            _LOGGER.debug(
-                f"ValueError: {str(ex)} while handling {self.entity_description.key}"
-            )
-        except Exception as ex:
-            _LOGGER.debug(
-                f"Unexpected error: {str(ex)} while handling {self.entity_description.key}"
-            )
+        """Publish each metric independently, without stale zero readings."""
+        key = self.entity_description.key
+        if key == "output":
+            key = "ac_power"
+        data = self.coordinator.data or {}
+        value = data.get(key)
+        self._attr_native_value = value
+        self._attr_available = value is not None
+        self.async_write_ha_state()
 
     @property
     def extra_state_attributes(self):

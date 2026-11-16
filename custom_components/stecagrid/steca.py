@@ -196,7 +196,7 @@ class StecaConnector:
 
         _LOGGER.debug("daily yield from inverter")
 
-        daily_yield = PowerOutput_MIN
+        daily_yield = None
 
         # Find the formula byte 0x09 for CurrentDayYield
         formula_index = msg_response.find(b'\x09')
@@ -207,11 +207,11 @@ class StecaConnector:
         else:
             _LOGGER.info("Ingen solproduktion")
 
-        print("Daily Yield (Wh):", round(daily_yield, 1))
+        _LOGGER.debug("Daily Yield (Wh): %s", daily_yield)
 
         self._previous_value = daily_yield
         self.current_power_output = daily_yield
-        return round(daily_yield, 1)
+        return round(daily_yield, 1) if daily_yield is not None else None
 
     async def GetNominalPower(self):
         req = self.GenerateRequestTelegram(29)
@@ -242,7 +242,7 @@ class StecaConnector:
             formula_index = msg_response.find(b'\x0b', 15)  # find first 0x0B
             if formula_index == -1 or len(msg_response) < formula_index + 5:
                 print("Panel power bytes not found")
-                return 0.0
+                return None
 
             power_bytes = msg_response[formula_index : formula_index + 4]  # 4 bytes after 0x0B
             power_output = self.formulaToFloat(power_bytes)
@@ -251,7 +251,7 @@ class StecaConnector:
         
         except Exception as e:
             _LOGGER.error("Fejl ved parsing af inverterdata i GetPanelOutput! - der er sikkert overskyet. error=%s", e)
-            return PowerOutput_MIN
+            return None
 
     async def GetPanelVoltage(self):
         req = self.GenerateRequestTelegram(35)
@@ -261,7 +261,7 @@ class StecaConnector:
             formula_index = msg_response.find(b'\x05', 15)  # find first 0x0B
             if formula_index == -1 or len(msg_response) < formula_index + 5:
                 print("Panel voltage bytes not found")
-                return 0.0
+                return None
             
             power_bytes = msg_response[formula_index : formula_index + 4]  # 4 bytes after 0x0B
             power_output = self.formulaToFloat(power_bytes)
@@ -270,7 +270,7 @@ class StecaConnector:
         
         except Exception as e:
             _LOGGER.error("Fejl ved parsing af inverterdata i GetPanelOutput! - der er sikkert overskyet. error=%s", e)
-            return PowerOutput_MIN
+            return None
 
     async def GetPanelCurrent(self):
         req = self.GenerateRequestTelegram(36)
@@ -280,7 +280,7 @@ class StecaConnector:
             formula_index = msg_response.find(b'\x07', 15)  # find first 0x0B
             if formula_index == -1 or len(msg_response) < formula_index + 5:
                 print("Panel Current bytes not found")
-                return 0.0
+                return None
             
             power_bytes = msg_response[formula_index : formula_index + 4]  # 4 bytes after 0x0B
             power_output = self.formulaToFloat(power_bytes)
@@ -289,7 +289,7 @@ class StecaConnector:
         
         except Exception as e:
             _LOGGER.error("Fejl ved parsing af inverterdata i GetPanelOutput! - der er sikkert overskyet. error=%s", e)
-            return PowerOutput_MIN
+            return None
             
 
     async def GetTotalYield(self):
@@ -307,16 +307,16 @@ class StecaConnector:
                 or response[8] != 0x00
                 or response[11] != 0xF1
             ):
-                _LOGGER.warning("Invalid total yield response from StecaGrid")
+                _LOGGER.debug("Invalid total yield response from StecaGrid")
                 return None
 
             energy_wh = struct.unpack("<f", response[12:16])[0]
             if not math.isfinite(energy_wh) or energy_wh < 0:
-                _LOGGER.warning("Invalid total yield value: %s", energy_wh)
+                _LOGGER.debug("Invalid total yield value: %s", energy_wh)
                 return None
             return round(energy_wh / 1000.0, 3)
         except (OSError, ValueError, TypeError, IndexError, struct.error) as err:
-            _LOGGER.warning("Cannot read StecaGrid total yield: %s", err)
+            _LOGGER.debug("Cannot read StecaGrid total yield: %s", err)
             return None
 
     def GenerateRequestTelegram(self, RequestIdentifier, service_code=ServiceCode, auth_level=AuthLevel):
@@ -357,61 +357,31 @@ class StecaConnector:
         return Telegram
 
     async def PollInverter(self, requestMessage):
+        """Exchange one complete Steca frame with the serial TCP bridge.
+
+        TCP is a byte stream: a single read() is not guaranteed to contain
+        the whole inverter reply, even if it often works in practice.
+        """
+        writer = None
         try:
             reader, writer = await asyncio.open_connection(self._host, self._port)
-
-            # Send request
             writer.write(requestMessage)
-            await writer.drain()  # Ensure the message is sent
-            # print(f"TX {len(requestMessage)} bytes '{requestMessage.hex()}'")
+            await writer.drain()
 
-            # Receive response
-            msg_response = await reader.read(1024)
-            length = len(msg_response)
-            _LOGGER.debug(f"Received {length} bytes '{str(msg_response)}'")
-
-            # Close the connection
-            writer.close()
-            await writer.wait_closed()
-
-            # return msg_response
-            print(f"RX {length} bytes '{msg_response.hex()}'")
-            # print(f"RX {length} bytes '{str(msg_response)}'")
-
-
-        except Exception as e:
-            _LOGGER.debug(
-                f"No response from Steca inverter. ({self._errorcount}) " + str(e)
-            )
-            if self._errorcount > 5:
-                _LOGGER.warning(
-                    f"No response from Steca inverter. ({self._errorcount}) " + str(e)
-                )
-                self._previous_value = None
-
-            self._errorcount += 1
-            # return self._previous_value
-
-        self._errorcount = 0
-
-        try:
-            if len(msg_response) < 11:
-                _LOGGER.info(
-                    "Steca response too short, probably incomplete message received from inverter"
-                )
-                return PowerOutput_MIN
-
-            ResponseCode = msg_response[8]
-            #ResponseValue = msg_response[11]
-
-            if ResponseCode == 0x01:  # ServiceNotSupported
-                _LOGGER.warning("Service Not Supported by inverter")
-                return "Service Not Supported by inverter"
-
-            return msg_response
-
-        except Exception:  # pylint: disable=broad-except
-            _LOGGER.debug(
-                f"Fejl ved parsing af inverterdata! - det er måske overskyet eller aften/nat (output = {power_output})"
-            )
-            return PowerOutput_MIN
+            header = await reader.readexactly(4)
+            if header[:2] != b"\x02\x01":
+                raise ValueError(f"Invalid Steca frame header: {header.hex()}")
+            total_length = int.from_bytes(header[2:4], "big")
+            if not 11 <= total_length <= 1024:
+                raise ValueError(f"Invalid Steca frame length: {total_length}")
+            response = header + await reader.readexactly(total_length - 4)
+            if response[-1] != 0x03:
+                raise ValueError("Steca frame end marker missing")
+            if response[8] == 0x01:
+                raise ValueError("Steca inverter does not support requested service")
+            _LOGGER.debug("StecaGrid received %s bytes", len(response))
+            return response
+        finally:
+            if writer is not None:
+                writer.close()
+                await writer.wait_closed()
