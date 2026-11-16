@@ -18,6 +18,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import StecaGridCoordinator
+from .lifetime_energy import retain_total_energy
 from .const import DEFAULT_INVERTER_POLLRATE, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -139,13 +140,12 @@ class StecagridSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
             key = "ac_power"
         data = self.coordinator.data or {}
         value = data.get(key)
-        if key == "total_yield" and value is None:
-            # Keep the previously measured counter, also after restart.
-            # Never replace an energy total with a fabricated zero.
-            self._attr_available = self._attr_native_value is not None
+        if key == "total_yield":
+            # Never replace the cumulative meter with a missing measurement.
+            self._attr_native_value = retain_total_energy(self._attr_native_value, value)
         else:
             self._attr_native_value = value
-            self._attr_available = value is not None
+        self._attr_available = self._attr_native_value is not None
         self.async_write_ha_state()
 
     @property
