@@ -16,6 +16,7 @@ Several sensors from the inverter is exposed, including:
 - Current panel voltage
 - Current panel current
 - Todays total output
+- Lifetime total AC energy (kWh), read directly from inverter (service `0x64`, topic `0xF1`). Exposed with `total_increasing` statistics for the Home Assistant Energy dashboard. If the inverter does not support this query or communication fails, this sensor is unavailable instead of reporting a false zero.
 
 ![billede](https://github.com/user-attachments/assets/9cd77002-f1f3-4711-b854-1526972bef73)
 
