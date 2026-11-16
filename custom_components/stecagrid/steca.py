@@ -369,7 +369,7 @@ class StecaConnector:
             await writer.drain()
 
             header = await reader.readexactly(4)
-            if header[:2] != b"\\x02\\x01":
+            if header[:2] != b"\x02\x01":
                 raise ValueError(f"Invalid Steca frame header: {header.hex()}")
             total_length = int.from_bytes(header[2:4], "big")
             if not 11 <= total_length <= 1024:
