@@ -3,12 +3,13 @@
 import asyncio
 from datetime import timedelta
 import logging
+import time
 
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN
 from .steca import StecaConnector
@@ -102,25 +103,43 @@ class StecaGridCoordinator(DataUpdateCoordinator):
         self._alias = alias
 
     async def _async_update_data(self):
-        # Fetch data from API endpoint. This is the place to pre-process the data to lookup tables so entities can quickly look up their data.
+        """Poll independently, preserving other sensors when one query fails."""
+        reads = (
+            ("ac_power", self.stecaApi.GetACOutput),
+            ("panel_power", self.stecaApi.GetPanelOutput),
+            ("panel_voltage", self.stecaApi.GetPanelVoltage),
+            ("panel_current", self.stecaApi.GetPanelCurrent),
+            ("daily_yield", self.stecaApi.GetDailyYield),
+            ("total_yield", self.stecaApi.GetTotalYield),
+            ("time", self.stecaApi.GetInverterTime),
+        )
+        readings = {}
+        failures = {}
+        for name, read in reads:
+            started = time.monotonic()
+            try:
+                # Each serial request has its own deadline; an optional
+                # energy counter must not time out the entire update.
+                readings[name] = await asyncio.wait_for(read(), timeout=2.5)
+                if readings[name] is None:
+                    failures[name] = "empty or unsupported response"
+            except TimeoutError:
+                readings[name] = None
+                failures[name] = "timeout after 2.5s"
+            except Exception as err:
+                readings[name] = None
+                failures[name] = f"{type(err).__name__}: {err}"
+                _LOGGER.debug("StecaGrid %s read exception", name, exc_info=True)
+            finally:
+                _LOGGER.debug(
+                    "StecaGrid %s poll took %.3fs", name, time.monotonic() - started
+                )
 
-        try:
-            retData = {}
-            async with asyncio.timeout(5):
-                retData["ac_power"] = await self.stecaApi.GetACOutput()
-                retData["panel_power"] = await self.stecaApi.GetPanelOutput()
-                retData["panel_voltage"] = await self.stecaApi.GetPanelVoltage()
-                retData["panel_current"] = await self.stecaApi.GetPanelCurrent()
-                retData["daily_yield"] = await self.stecaApi.GetDailyYield()
-                retData["total_yield"] = await self.stecaApi.GetTotalYield()
-                retData["time"] = await self.stecaApi.GetInverterTime()
-                
-                return retData
-        except:
-            _LOGGER.error("StecaGridCoordinator _async_update_data failed")
-        # except ApiAuthError as err:
-        #     # Raising ConfigEntryAuthFailed will cancel future updates
-        #     # and start a config flow with SOURCE_REAUTH (async_step_reauth)
-        #     raise ConfigEntryAuthFailed from err
-        # except ApiError as err:
-        #     raise UpdateFailed(f"Error communicating with API: {err}")
+        if failures:
+            _LOGGER.warning(
+                "StecaGrid read issues: %s",
+                "; ".join(f"{key}: {value}" for key, value in failures.items()),
+            )
+        if all(value is None for value in readings.values()):
+            raise UpdateFailed("All StecaGrid measurements failed")
+        return readings
