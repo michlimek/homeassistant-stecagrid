@@ -1,6 +1,7 @@
 import asyncio
 import socket
 import struct
+import math
 
 from logging import getLogger
 
@@ -290,7 +291,35 @@ class StecaConnector:
             _LOGGER.error("Fejl ved parsing af inverterdata i GetPanelOutput! - der er sikkert overskyet. error=%s", e)
             return PowerOutput_MIN
             
-    def GenerateRequestTelegram(self, RequestIdentifier):
+
+    async def GetTotalYield(self):
+        """Read lifetime energy in kWh (service 0x64, topic 0xF1)."""
+        request = self.GenerateRequestTelegram(0xF1, service_code=b"\x64", auth_level=b"\x03")
+        try:
+            response = await self.PollInverter(request)
+            if (
+                not isinstance(response, (bytes, bytearray))
+                or len(response) < 20
+                or response[0] != 0x02
+                or response[-1] != 0x03
+                or int.from_bytes(response[2:4], "big") != len(response)
+                or response[7] != 0x65
+                or response[8] != 0x00
+                or response[11] != 0xF1
+            ):
+                _LOGGER.warning("Invalid total yield response from StecaGrid")
+                return None
+
+            energy_wh = struct.unpack("<f", response[12:16])[0]
+            if not math.isfinite(energy_wh) or energy_wh < 0:
+                _LOGGER.warning("Invalid total yield value: %s", energy_wh)
+                return None
+            return round(energy_wh / 1000.0, 3)
+        except (OSError, ValueError, TypeError, IndexError, struct.error) as err:
+            _LOGGER.warning("Cannot read StecaGrid total yield: %s", err)
+            return None
+
+    def GenerateRequestTelegram(self, RequestIdentifier, service_code=ServiceCode, auth_level=AuthLevel):
         ### Generate Dataframe
         DataFrame = bytearray(b"")
         DataFrame.extend(bytes([RequestIdentifier]))  # Add Identifier to frame
@@ -310,8 +339,8 @@ class StecaConnector:
 
         ### Concat to FrameData
         FrameData = bytearray(b"")
-        FrameData.extend(ServiceCode)
-        FrameData.extend(AuthLevel)
+        FrameData.extend(service_code)
+        FrameData.extend(auth_level)
         FrameData.extend(DataFrameLength)
         FrameData.extend(DataFrame)
 
