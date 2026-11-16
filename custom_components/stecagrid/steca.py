@@ -323,7 +323,7 @@ class StecaConnector:
         ### Generate Dataframe
         DataFrame = bytearray(b"")
         DataFrame.extend(bytes([RequestIdentifier]))  # Add Identifier to frame
-        DataFrameCRC = self.frameCRC(CRC_8_OFFSET, DataFrame)  # calculate dataframe CRC
+        DataFrameCRC = self.frameCRC(CRC_8_OFFSET, DataFrame) & 0xFF  # 8-bit checksum
         DataFrameLength = bytearray(struct.pack(">h", len(DataFrame)))
         DataFrame.append(DataFrameCRC)  # and append
 
