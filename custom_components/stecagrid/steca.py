@@ -357,61 +357,31 @@ class StecaConnector:
         return Telegram
 
     async def PollInverter(self, requestMessage):
+        """Exchange one complete Steca frame with the serial TCP bridge.
+
+        TCP is a byte stream: a single read() is not guaranteed to contain
+        the whole inverter reply, even if it often works in practice.
+        """
+        writer = None
         try:
             reader, writer = await asyncio.open_connection(self._host, self._port)
-
-            # Send request
             writer.write(requestMessage)
-            await writer.drain()  # Ensure the message is sent
-            # print(f"TX {len(requestMessage)} bytes '{requestMessage.hex()}'")
+            await writer.drain()
 
-            # Receive response
-            msg_response = await reader.read(1024)
-            length = len(msg_response)
-            _LOGGER.debug(f"Received {length} bytes '{str(msg_response)}'")
-
-            # Close the connection
-            writer.close()
-            await writer.wait_closed()
-
-            # return msg_response
-            print(f"RX {length} bytes '{msg_response.hex()}'")
-            # print(f"RX {length} bytes '{str(msg_response)}'")
-
-
-        except Exception as e:
-            _LOGGER.debug(
-                f"No response from Steca inverter. ({self._errorcount}) " + str(e)
-            )
-            if self._errorcount > 5:
-                _LOGGER.warning(
-                    f"No response from Steca inverter. ({self._errorcount}) " + str(e)
-                )
-                self._previous_value = None
-
-            self._errorcount += 1
-            # return self._previous_value
-
-        self._errorcount = 0
-
-        try:
-            if len(msg_response) < 11:
-                _LOGGER.info(
-                    "Steca response too short, probably incomplete message received from inverter"
-                )
-                return PowerOutput_MIN
-
-            ResponseCode = msg_response[8]
-            #ResponseValue = msg_response[11]
-
-            if ResponseCode == 0x01:  # ServiceNotSupported
-                _LOGGER.warning("Service Not Supported by inverter")
-                return "Service Not Supported by inverter"
-
-            return msg_response
-
-        except Exception:  # pylint: disable=broad-except
-            _LOGGER.debug(
-                f"Fejl ved parsing af inverterdata! - det er måske overskyet eller aften/nat (output = {power_output})"
-            )
-            return PowerOutput_MIN
+            header = await reader.readexactly(4)
+            if header[:2] != b"\\x02\\x01":
+                raise ValueError(f"Invalid Steca frame header: {header.hex()}")
+            total_length = int.from_bytes(header[2:4], "big")
+            if not 11 <= total_length <= 1024:
+                raise ValueError(f"Invalid Steca frame length: {total_length}")
+            response = header + await reader.readexactly(total_length - 4)
+            if response[-1] != 0x03:
+                raise ValueError("Steca frame end marker missing")
+            if response[8] == 0x01:
+                raise ValueError("Steca inverter does not support requested service")
+            _LOGGER.debug("StecaGrid received %s bytes", len(response))
+            return response
+        finally:
+            if writer is not None:
+                writer.close()
+                await writer.wait_closed()
