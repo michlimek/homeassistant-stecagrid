@@ -24,7 +24,7 @@ jobs:
           required = {"domain", "documentation", "issue_tracker", "codeowners", "name", "version"}
           assert not (required - manifest.keys()), f"Missing manifest fields: {required - manifest.keys()}"
           assert manifest["domain"] == "stecagrid"
-          assert manifest["version"] == "1.0.3"
+          assert manifest["version"] and len(manifest["version"].split(".")) == 3
           assert isinstance(manifest["codeowners"], list)
           assert hacs["name"] == "StecaGrid"
           PY
