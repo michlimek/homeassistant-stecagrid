@@ -1,7 +1,11 @@
 {
   "domain": "stecagrid",
   "name": "Stecagrid",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "config_flow": true,
-  "documentation": "https://github.com/MichaelOE/homeassistant-stecagrid"
+  "documentation": "https://github.com/michlimek/homeassistant-stecagrid",
+  "issue_tracker": "https://github.com/michlimek/homeassistant-stecagrid/issues",
+  "codeowners": [
+    "@michlimek"
+  ]
 }
