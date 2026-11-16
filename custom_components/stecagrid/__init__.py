@@ -101,6 +101,7 @@ class StecaGridCoordinator(DataUpdateCoordinator):
         )
         self.stecaApi = stecaAPI
         self._alias = alias
+        self._previous_failures = {}
 
     async def _async_update_data(self):
         """Poll independently, preserving other sensors when one query fails."""
@@ -135,11 +136,17 @@ class StecaGridCoordinator(DataUpdateCoordinator):
                     "StecaGrid %s poll took %.3fs", name, time.monotonic() - started
                 )
 
-        if failures:
-            _LOGGER.warning(
-                "StecaGrid read issues: %s",
-                "; ".join(f"{key}: {value}" for key, value in failures.items()),
-            )
+        if failures != self._previous_failures:
+            if failures:
+                _LOGGER.warning(
+                    "StecaGrid read issues: %s",
+                    "; ".join(f"{key}: {value}" for key, value in failures.items()),
+                )
+            elif self._previous_failures:
+                _LOGGER.info("StecaGrid communication fully restored")
+            self._previous_failures = failures
+        elif failures:
+            _LOGGER.debug("StecaGrid repeated read failures: %s", failures)
         if all(value is None for value in readings.values()):
             raise UpdateFailed("All StecaGrid measurements failed")
         return readings
