@@ -196,7 +196,7 @@ class StecaConnector:
 
         _LOGGER.debug("daily yield from inverter")
 
-        daily_yield = PowerOutput_MIN
+        daily_yield = None
 
         # Find the formula byte 0x09 for CurrentDayYield
         formula_index = msg_response.find(b'\x09')
@@ -207,11 +207,11 @@ class StecaConnector:
         else:
             _LOGGER.info("Ingen solproduktion")
 
-        print("Daily Yield (Wh):", round(daily_yield, 1))
+        _LOGGER.debug("Daily Yield (Wh): %s", daily_yield)
 
         self._previous_value = daily_yield
         self.current_power_output = daily_yield
-        return round(daily_yield, 1)
+        return round(daily_yield, 1) if daily_yield is not None else None
 
     async def GetNominalPower(self):
         req = self.GenerateRequestTelegram(29)
@@ -242,7 +242,7 @@ class StecaConnector:
             formula_index = msg_response.find(b'\x0b', 15)  # find first 0x0B
             if formula_index == -1 or len(msg_response) < formula_index + 5:
                 print("Panel power bytes not found")
-                return 0.0
+                return None
 
             power_bytes = msg_response[formula_index : formula_index + 4]  # 4 bytes after 0x0B
             power_output = self.formulaToFloat(power_bytes)
@@ -251,7 +251,7 @@ class StecaConnector:
         
         except Exception as e:
             _LOGGER.error("Fejl ved parsing af inverterdata i GetPanelOutput! - der er sikkert overskyet. error=%s", e)
-            return PowerOutput_MIN
+            return None
 
     async def GetPanelVoltage(self):
         req = self.GenerateRequestTelegram(35)
@@ -261,7 +261,7 @@ class StecaConnector:
             formula_index = msg_response.find(b'\x05', 15)  # find first 0x0B
             if formula_index == -1 or len(msg_response) < formula_index + 5:
                 print("Panel voltage bytes not found")
-                return 0.0
+                return None
             
             power_bytes = msg_response[formula_index : formula_index + 4]  # 4 bytes after 0x0B
             power_output = self.formulaToFloat(power_bytes)
@@ -270,7 +270,7 @@ class StecaConnector:
         
         except Exception as e:
             _LOGGER.error("Fejl ved parsing af inverterdata i GetPanelOutput! - der er sikkert overskyet. error=%s", e)
-            return PowerOutput_MIN
+            return None
 
     async def GetPanelCurrent(self):
         req = self.GenerateRequestTelegram(36)
@@ -280,7 +280,7 @@ class StecaConnector:
             formula_index = msg_response.find(b'\x07', 15)  # find first 0x0B
             if formula_index == -1 or len(msg_response) < formula_index + 5:
                 print("Panel Current bytes not found")
-                return 0.0
+                return None
             
             power_bytes = msg_response[formula_index : formula_index + 4]  # 4 bytes after 0x0B
             power_output = self.formulaToFloat(power_bytes)
@@ -289,7 +289,7 @@ class StecaConnector:
         
         except Exception as e:
             _LOGGER.error("Fejl ved parsing af inverterdata i GetPanelOutput! - der er sikkert overskyet. error=%s", e)
-            return PowerOutput_MIN
+            return None
             
 
     async def GetTotalYield(self):
