@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import timedelta
 import logging
+import math
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -14,8 +15,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfElectricCurrent, UnitOfEnergy, UnitOfPower, UnitOfElectricPotential
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import StecaGridCoordinator
+from .lifetime_energy import retain_total_energy
 from .const import DEFAULT_INVERTER_POLLRATE, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -70,7 +73,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     _LOGGER.debug("async_setup_platform")
 
 
-class StecagridSensor(CoordinatorEntity, SensorEntity):
+class StecagridSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     """Representation of a meter reading sensor."""
 
     def __init__(
@@ -115,11 +118,19 @@ class StecagridSensor(CoordinatorEntity, SensorEntity):
         return self._attr_native_value
 
     async def async_added_to_hass(self):
-        """Handle entity addition to hass."""
-        # Add the coordinator listener for data updates
-        self.coordinator.async_add_listener(self._handle_coordinator_update)
-        # Ensure that data is fetched initially
-        await self.coordinator.async_refresh()
+        """Restore the cumulative meter and subscribe to live updates."""
+        await super().async_added_to_hass()
+        if self.entity_description.key == "total_yield":
+            last = await self.async_get_last_state()
+            if last is not None:
+                try:
+                    value = float(last.state)
+                    if math.isfinite(value) and value >= 0:
+                        self._attr_native_value = value
+                except (ValueError, TypeError):
+                    pass
+        if self.coordinator.data is not None:
+            self._handle_coordinator_update()
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -129,9 +140,20 @@ class StecagridSensor(CoordinatorEntity, SensorEntity):
             key = "ac_power"
         data = self.coordinator.data or {}
         value = data.get(key)
-        self._attr_native_value = value
-        self._attr_available = value is not None
+        if key == "total_yield":
+            # Never replace the cumulative meter with a missing measurement.
+            self._attr_native_value = retain_total_energy(self._attr_native_value, value)
+        else:
+            self._attr_native_value = value
+        self._attr_available = self._attr_native_value is not None
         self.async_write_ha_state()
+
+    @property
+    def available(self):
+        if self.entity_description.key == "total_yield":
+            # Missing poll is not a reset of the non-volatile inverter counter.
+            return self._attr_native_value is not None
+        return super().available
 
     @property
     def extra_state_attributes(self):
