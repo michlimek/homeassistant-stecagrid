@@ -1,0 +1,34 @@
+name: Validate StecaGrid integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate integration metadata
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path("custom_components/stecagrid/manifest.json").read_text())
+          hacs = json.loads(Path("hacs.json").read_text())
+          required = {"domain", "documentation", "issue_tracker", "codeowners", "name", "version"}
+          assert not (required - manifest.keys()), f"Missing manifest fields: {required - manifest.keys()}"
+          assert manifest["domain"] == "stecagrid"
+          assert manifest["version"] == "1.0.3"
+          assert isinstance(manifest["codeowners"], list)
+          assert hacs["name"] == "StecaGrid"
+          PY
+      - name: Verify Python syntax
+        run: python -m compileall -q custom_components/stecagrid tests
+      - name: Test StecaGrid protocol
+        run: python -m unittest discover -s tests -v
