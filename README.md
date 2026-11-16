@@ -27,3 +27,7 @@ I got inspiration from this Arduino project: https://github.com/tsybolek/Aquarea
 
 [buymecoffeebadge]: https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png
 [michaeloe-buymecoffee]: https://buymeacoffee.com/michaeloe
+
+## Installation with HACS
+
+Add `michlimek/homeassistant-stecagrid` as a **custom integration repository** in HACS, download the latest version, and restart Home Assistant. The repository includes a root `hacs.json` for branch/commit downloads. HACS releases are optional; when no release is published, HACS tracks the default branch commit. Current integration version: **1.0.3**.
