@@ -8,6 +8,7 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
+    SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfElectricCurrent, UnitOfEnergy, UnitOfPower, UnitOfElectricPotential
@@ -35,6 +36,7 @@ class StecaGridEntityDescription(SensorEntityDescription):
         native_unit_of_measurement,
         value,
         format=None,
+        state_class=None,
     ):
         super().__init__(key)
         self.key = key
@@ -45,6 +47,8 @@ class StecaGridEntityDescription(SensorEntityDescription):
         self.native_unit_of_measurement = native_unit_of_measurement
         self.value = value
         self.format = format
+        if state_class is not None:
+            self.state_class = state_class
 
 
 async def async_setup_entry(
@@ -152,6 +156,14 @@ class StecagridSensor(CoordinatorEntity, SensorEntity):
                 self._attr_native_value = self.coordinator.data["daily_yield"]
                 data_available = True
 
+            # Handle lifetime energy; missing data must not be interpreted as zero.
+            if self.entity_description.key == "total_yield":
+                value = self.coordinator.data.get("total_yield")
+                self._attr_native_value = value
+                self._attr_available = value is not None
+                self.async_write_ha_state()
+                return
+
             # Handle time
             if "time" in self.entity_description.key:
                 self._attr_native_value = self.coordinator.data["time"]
@@ -234,6 +246,15 @@ SENSORS_INVERTER: tuple[SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
         value=lambda data, key: data[key],
+    ),
+    StecaGridEntityDescription(
+        key="total_yield",
+        name="Total energy",
+        icon="mdi:solar-power",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value=lambda data, key: data[key],
+        state_class=SensorStateClass.TOTAL_INCREASING,
     ),
     StecaGridEntityDescription(
         key="time",
