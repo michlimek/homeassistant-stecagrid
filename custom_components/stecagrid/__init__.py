@@ -9,8 +9,9 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from .availability import normalize_offline_readings
 from .const import DOMAIN
 from .steca import StecaConnector
 
@@ -147,6 +148,7 @@ class StecaGridCoordinator(DataUpdateCoordinator):
             self._previous_failures = failures
         elif failures:
             _LOGGER.debug("StecaGrid repeated read failures: %s", failures)
-        if all(value is None for value in readings.values()):
-            raise UpdateFailed("All StecaGrid measurements failed")
-        return readings
+        # Publish states even if the sleeping inverter does not respond.
+        sun = self.hass.states.get("sun.sun")
+        sun_state = sun.state if sun is not None else None
+        return normalize_offline_readings(readings, sun_state)
