@@ -30,8 +30,12 @@ I got inspiration from this Arduino project: https://github.com/tsybolek/Aquarea
 
 ## Installation with HACS
 
-Add `michlimek/homeassistant-stecagrid` as a **custom integration repository** in HACS, download the latest version, and restart Home Assistant. The repository includes a root `hacs.json` for branch/commit downloads. HACS releases are optional; when no release is published, HACS tracks the default branch commit. Current integration version: **1.0.4**.
+Add `michlimek/homeassistant-stecagrid` as a **custom integration repository** in HACS, download the latest version, and restart Home Assistant. The repository includes a root `hacs.json` for branch/commit downloads. HACS releases are optional; when no release is published, HACS tracks the default branch commit. Current integration version: **1.0.5**.
 
 ### Serial/TCP diagnostics
 
 Each inverter measurement is polled independently with a 2.5-second timeout. Failed individual readings become unavailable without replacing other sensors with zero. The integration logs changed failure details at warning level (enable debug logging for individual query durations). Steca frames are reassembled using their declared length, avoiding incomplete TCP reads. Some earlier decoder branches still need verification against real inverter replies; in particular the lifetime counter support must be confirmed on StecaGrid 8000+.
+
+### Nighttime when the inverter powers down
+
+When the inverter no longer answers and Home Assistant's `sun.sun` is `below_horizon`, instantaneous AC/DC power and panel current report `0` rather than keeping the last positive sample. During the day, or if `sun.sun` is not available, missing measurements are `unavailable` so a network fault is not mistaken for zero generation. Fresh readings are always preferred. Daily and lifetime energy counters, inverter timestamp and voltage are never synthesized; unavailable readings stay unavailable. The Sun integration must be configured in HA for this fallback.
