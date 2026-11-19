@@ -84,7 +84,7 @@ class StecagridSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     ):
         """Initialize the sensor."""
         self._data = client
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self.entity_description: StecaGridEntityDescription = sensor
         self._attr_unique_id = f"{self.coordinator._alias}_{sensor.key}"
         self._attr_name = f"{self.coordinator._alias} {sensor.name}"
